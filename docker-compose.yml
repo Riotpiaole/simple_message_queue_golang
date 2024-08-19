@@ -1,0 +1,75 @@
+version: '3.8'
+networks:
+  kafka-net:
+    driver: bridge
+
+volumes:
+  kafka-data:
+    driver: local
+
+services:
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0.arm64
+    container_name: kafka
+    hostname: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'PLAINTEXT_HOST'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_JMX_PORT: 9101
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:9092'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      CLUSTER_ID:  S3cfkRGHTYC-mvW8Qu3JUw # Set this to your generated CLUSTER_ID
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    ports:
+      - 29092:29092
+      - 9093:9093
+    networks:
+      - kafka-net
+  
+  server:
+    platform: linux/arm64
+    image: server:v1.0
+    environment:
+      - KAFKA_BROKER_SERV=kafka:29092
+    build:
+      context: ./service/server
+      dockerfile: server.dockerfile
+    depends_on:
+      - kafka
+    ports:
+      - "3000:3000"
+    networks:
+      - kafka-net
+
+  consumer:
+    platform: linux/arm64
+    image: consumer:v1.0
+    environment:
+      - KAFKA_BROKER_SERV=kafka:29092
+    build:
+      context: ./service/consumer
+      dockerfile: consumer.dockerfile
+    depends_on:
+      kafka:
+        condition: service_started
+    networks:
+      - kafka-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
